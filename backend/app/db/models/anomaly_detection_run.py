@@ -1,0 +1,138 @@
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, TYPE_CHECKING
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Uuid as UUID
+try:
+    from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
+    JSONB = JSON().with_variant(PG_JSONB, "postgresql")
+except Exception:
+    JSONB = JSON
+
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.db.database import Base
+
+if TYPE_CHECKING:
+    from app.db.models.anomaly_result import AnomalyResult
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class AnomalyDetectionRun(Base):
+    """SQLAlchemy model for tracking anomaly detection execution runs."""
+
+    __tablename__ = "anomaly_detection_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        nullable=False,
+    )
+
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("datasets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    processed_dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("datasets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    profile_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    processed_checksum: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    method: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="UNIVARIATE_COMBINED",
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="PENDING",
+    )
+
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    total_observations: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    anomaly_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    anomaly_percentage: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    results_truncated: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    method_summary: Mapped[Dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+
+    error_message: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    results: Mapped[list["AnomalyResult"]] = relationship(
+        "AnomalyResult",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="AnomalyResult.anomaly_score.desc()",
+    )
+
+    def __repr__(self) -> str:
+        return f"<AnomalyDetectionRun(id={self.id}, dataset_id={self.dataset_id}, status='{self.status}')>"
